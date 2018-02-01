@@ -11,6 +11,8 @@ import re
 import random
 from slackclient import SlackClient
 
+import urllib.request
+
 import json #used for debug printing
 
 # instantiate Slack client
@@ -23,8 +25,21 @@ starterbot_id = None
 # constants
 RTM_READ_DELAY = 1 # 1 second delay between reading from RTM
 QUESTION_END = "?"
-MENTION_REGEX = "^<@(.+)>(.*)" # unused? remove probably
+MENTION_REGEX = "^PRICEOF (.*)" # unused? remove probably
 RESPONSES = ["Absolutely.", "Probably!", "Maybe...", "Not really.", "I don't know.", "In your dreams.", "Never!", "What's the point in knowing..."]
+
+LAST_READ_TIME = 1
+REFRESH_RATE = 10
+
+def get_coin_price(coin):
+    global LAST_READ_TIME
+    if (time.time() - LAST_READ_TIME) > REFRESH_RATE:
+        LAST_READ_TIME = time.time()
+        with urllib.request.urlopen("https://min-api.cryptocompare.com/data/price?fsym="+coin+"&tsyms=CAD") as url:
+            data = json.loads(url.read().decode())
+            return str(data.get("CAD", False)) + " CAD" or "I don't know"
+    else:
+        return "Give me some more time and then ask again ^_^"
 
 # can simplify this function b.c. of cut functionality
 def parse_bot_commands(slack_events):
@@ -47,14 +62,14 @@ def parse_bot_commands(slack_events):
 
 
 # unused. bah
-def parse_direct_mention(message_text):
+def parse_price_command(message_text):
     """
         Finds a direct mention (a mention that is at the beginning) in message text
         and returns the user ID which was mentioned. If there is no direct mention, returns None
     """
-    matches = re.search(MENTION_REGEX, message_text)
+    matches = re.search(MENTION_REGEX, message_text.upper())
     # the first group contains the username, the second group contains the remaining message
-    return (matches.group(1), matches.group(2).strip()) if matches else (None, None)
+    return matches.group(1) if matches else None
 
 def handle_command(command, channel):
     """
@@ -66,11 +81,13 @@ def handle_command(command, channel):
     # Finds and executes the given command, filling in response
     response = None
 
-    print(command)
-
     # This is where you start to implement more commands!
     if command.endswith(QUESTION_END):
         response = '"' + command + '": ' + random.choice(RESPONSES);
+
+    coin = parse_price_command(command)
+    if coin:
+        response = get_coin_price(coin)
 
     # Sends the response back to the channel
     slack_client.api_call(
@@ -83,6 +100,8 @@ if __name__ == "__main__":
     # avm: connect is designed for larger teams, 
     # see https://slackapi.github.io/python-slackclient/real_time_messaging.html
     # for details
+    # print(get_coin_price("BTC"))
+    # exit()
     if slack_client.rtm_connect(with_team_state=False):
         print("Starter Bot connected and running!")
         # Read bot's user ID by calling Web API method `auth.test`
